@@ -1,0 +1,27 @@
+name:                whisperer
+version:             0.0.0
+Cabal-Version:       >= 1.8
+synopsis:            Read and write Whisper (Graphite's file format) files.
+description:
+  Read and write Whisper (Graphite's file format) files.
+category:            Development
+license:             BSD3
+license-file:        LICENSE
+author:              Vo Minh Thu
+maintainer:          thu@hypered.be
+build-type:          Simple
+
+library
+  build-depends:       base == 4.*,
+                       bytestring-mmap,
+                       storable-endian,
+                       unix
+  exposed-modules:     Data.Whisper
+  ghc-options:         -Wall
+
+executable whisperer
+  main-is:             whisperer.hs
+  hs-source-dirs:      bin/
+  build-depends:       base == 4.*,
+                       whisperer
+  ghc-options:         -Wall
