@@ -8,6 +8,6 @@ main :: IO ()
 main = do
   [filename] <- getArgs
   wsp <- openWhisper filename
-  metaData <- readMetaData wsp
-  print metaData
+  header <- readHeader wsp
+  print header
   closeWhisper wsp
