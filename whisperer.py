@@ -8,7 +8,11 @@ if __name__ == '__main__':
   assert len(sys.argv) == 2
 
   filename = sys.argv[1]
-  info = whisper.__readHeader(open(filename, "rb"))
+  with open(filename, 'rb') as fh:
+    info = whisper.__readHeader(fh)
 
-  print "Metadata size: %s bytes." % whisper.metadataSize
-  print info
+    print "Metadata size: %s bytes." % whisper.metadataSize
+    print info
+
+    xs = whisper.file_fetch(fh, 0, None)
+    print xs

@@ -10,4 +10,6 @@ main = do
   wsp <- openWhisper filename
   header <- readHeader wsp
   print header
+  archives <- readArchives wsp
+  print archives
   closeWhisper wsp
