@@ -2,6 +2,7 @@
 {-# LANGUAGE RecordWildCards #-}
 module Main (main) where
 
+import Data.Char (toLower)
 import System.Console.CmdArgs.Implicit
 
 import Data.Whisper
@@ -50,11 +51,20 @@ cmdPush = Push
 runCmd :: Cmd -> IO ()
 runCmd Info{..} = do
   wsp <- openWhisper cmdFilename
-  header <- readHeader wsp
-  print header
-  archives <- readArchives wsp
-  print archives
+  Header{..} <- readHeader wsp
+  let MetaData{..} = hMetaData
   closeWhisper wsp
+
+  putStrLn $ cmdFilename ++ ": period=" ++ show mdMaxRetention
+    ++ ", aggregation=" ++ map toLower (show mdAggregationType)
+    ++ ", propagation=" ++ show mdXFilesFactor
+    ++ ", archives=" ++ show mdArchiveCount
+  let f ai@ArchiveInfo{..} = "  period=" ++ show (aiRetention ai)
+        ++ ", points=" ++ show aiPoints
+        ++ ", seconds=" ++ show aiSecondsPerPoint
+        ++ ", size=" ++ show (aiSize ai)
+        ++ ", offset=" ++ show aiOffset
+  mapM_ (putStrLn . f) hArchiveInfo
 
 runCmd Push{..} = do
   putStrLn "`push` command not implemented." -- TODO
