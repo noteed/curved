@@ -23,5 +23,6 @@ executable whisperer
   main-is:             whisperer.hs
   hs-source-dirs:      bin/
   build-depends:       base == 4.*,
+                       cmdargs == 0.9.*,
                        whisperer
   ghc-options:         -Wall

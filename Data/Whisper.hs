@@ -94,15 +94,12 @@ readArchiveInfo Whisper{..} n =
 readArchive :: Whisper -> Int -> IO Archive
 readArchive w@Whisper{..} n = do
   ArchiveInfo{..} <- readArchiveInfo w n
-  print (aiOffset, aiPoints)
   ps <- mapM (readPoint w aiOffset) [0..aiPoints - 1]
   return $ Archive ps
 
 readPoint :: Whisper -> Int -> Int -> IO Point
-readPoint Whisper{..} archive n = do
-  p <- peekElemOff (castPtr whisperPtr `plusPtr` archive) n
-  print p
-  return p
+readPoint Whisper{..} archive n =
+  peekElemOff (castPtr whisperPtr `plusPtr` archive) n
 
 readArchives :: Whisper -> IO [Archive]
 readArchives w = do
