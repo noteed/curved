@@ -13,12 +13,12 @@ main = (runCmd =<<) . cmdArgs $
     , cmdPush
     ]
   &= summary versionString
-  &= program "whisperer"
+  &= program "curved"
 
 -- | String with the program name, version and copyright.
 versionString :: String
 versionString =
-  "Whisperer. Copyright (c) 2012 Vo Minh Thu."
+  "Curved. Copyright (c) 2012 Vo Minh Thu."
   -- TODO add the version.
 
 -- | Data type representing the different command-line subcommands.

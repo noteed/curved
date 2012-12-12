@@ -1,4 +1,4 @@
-name:                whisperer
+name:                curved
 version:             0.0.0
 Cabal-Version:       >= 1.8
 synopsis:            Read and write Whisper (Graphite's file format) files.
@@ -19,10 +19,10 @@ library
   exposed-modules:     Data.Whisper
   ghc-options:         -Wall
 
-executable whisperer
-  main-is:             whisperer.hs
+executable curved
+  main-is:             curved.hs
   hs-source-dirs:      bin/
   build-depends:       base == 4.*,
                        cmdargs == 0.9.*,
-                       whisperer
+                       curved
   ghc-options:         -Wall
