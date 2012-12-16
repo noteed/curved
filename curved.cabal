@@ -13,10 +13,17 @@ build-type:          Simple
 
 library
   build-depends:       base == 4.*,
+                       bytestring == 0.9.*,
                        bytestring-mmap,
+                       snap == 0.9.*,
+                       snap-blaze == 0.2.*,
+                       snap-core == 0.9.*,
+                       snap-server == 0.9.*,
                        storable-endian,
+                       time,
                        unix
-  exposed-modules:     Data.Whisper
+  exposed-modules:     Curved.Httpd,
+                       Data.Whisper
   ghc-options:         -Wall
 
 executable curved

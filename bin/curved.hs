@@ -1,16 +1,19 @@
 {-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 module Main (main) where
 
 import Data.Char (toLower)
 import System.Console.CmdArgs.Implicit
 
+import Curved.Httpd
 import Data.Whisper
 
 main :: IO ()
 main = (runCmd =<<) . cmdArgs $
   modes
     [ cmdInfo
+    , cmdHttpd
     , cmdPush
     ]
   &= summary versionString
@@ -26,6 +29,8 @@ versionString =
 data Cmd =
     Info { cmdFilename :: FilePath }
     -- ^ Display some Whisper file information.
+  | Httpd
+    -- ^ Run the curved web server.
   | Push
     -- ^ Add a new timestamped value to a Whisper file.
   deriving (Data, Typeable)
@@ -39,6 +44,13 @@ cmdInfo = Info
   } &= help "Display some Whisper file information."
     &= explicit
     &= name "info"
+
+-- | Create a 'Httpd' command.
+cmdHttpd :: Cmd
+cmdHttpd = Httpd
+    &= help "Run the Curved web server."
+    &= explicit
+    &= name "httpd"
 
 -- | Create a 'Push' command.
 cmdPush :: Cmd
@@ -65,6 +77,8 @@ runCmd Info{..} = do
         ++ ", size=" ++ show (aiSize ai)
         ++ ", offset=" ++ show aiOffset
   mapM_ (putStrLn . f) hArchiveInfo
+
+runCmd Httpd{..} = httpd 8080 "localhost"
 
 runCmd Push{..} = do
   putStrLn "`push` command not implemented." -- TODO
