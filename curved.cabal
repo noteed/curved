@@ -14,7 +14,6 @@ build-type:          Simple
 library
   build-depends:       base == 4.*,
                        bytestring == 0.9.*,
-                       bytestring-mmap,
                        snap == 0.9.*,
                        snap-blaze == 0.2.*,
                        snap-core == 0.9.*,
@@ -24,6 +23,7 @@ library
                        unix
   exposed-modules:     Curved.Httpd,
                        Data.Whisper
+  build-tools:         c2hs >= 0.15
   ghc-options:         -Wall
 
 executable curved

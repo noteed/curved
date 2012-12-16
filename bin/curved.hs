@@ -15,6 +15,7 @@ main = (runCmd =<<) . cmdArgs $
     [ cmdInfo
     , cmdHttpd
     , cmdPush
+    , cmdCreate
     ]
   &= summary versionString
   &= program "curved"
@@ -33,6 +34,8 @@ data Cmd =
     -- ^ Run the curved web server.
   | Push
     -- ^ Add a new timestamped value to a Whisper file.
+  | Create { cmdFilename :: FilePath, cmdPrecision :: Int, cmdSize :: Int }
+    -- ^ Create a new Whisper file.
   deriving (Data, Typeable)
 
 -- | Create a 'Info' command.
@@ -59,6 +62,24 @@ cmdPush = Push
     &= explicit
     &= name "push"
 
+-- | Create a 'Create' command.
+cmdCreate :: Cmd
+cmdCreate = Create
+  { cmdFilename = def
+    &= argPos 0
+    &= typ "FILE"
+  , cmdPrecision = def
+    &= explicit
+    &= name "precision"
+    &= help "Timeframe (in seconds) covered by each point."
+  , cmdSize = def
+    &= explicit
+    &= name "size"
+    &= help "Number of points contained in the archive."
+  } &= help "Create a new Whisper file with a single archive."
+    &= explicit
+    &= name "create"
+
 -- | Run a sub-command.
 runCmd :: Cmd -> IO ()
 runCmd Info{..} = do
@@ -80,5 +101,8 @@ runCmd Info{..} = do
 
 runCmd Httpd{..} = httpd 8080 "localhost"
 
-runCmd Push{..} = do
+runCmd Push{..} =
   putStrLn "`push` command not implemented." -- TODO
+
+runCmd Create{..} =
+  createWhisper cmdFilename [(cmdPrecision, cmdSize)] 0.5 Average
