@@ -34,7 +34,7 @@ data Cmd =
     -- ^ Display some Whisper file information.
   | Httpd
     -- ^ Run the curved web server.
-  | Push
+  | Push { cmdFilename :: FilePath, cmdValue :: Double }
     -- ^ Add a new timestamped value to a Whisper file.
   | Create { cmdFilename :: FilePath, cmdPrecision :: Int, cmdSize :: Int }
     -- ^ Create a new Whisper file.
@@ -60,7 +60,13 @@ cmdHttpd = Httpd
 -- | Create a 'Push' command.
 cmdPush :: Cmd
 cmdPush = Push
-    &= help "Add a new timestamped value to a Whisper file."
+  { cmdFilename = def
+    &= argPos 0
+    &= typ "FILE"
+  , cmdValue = def
+    &= argPos 1
+    &= typ "DOUBLE"
+  } &= help "Add a new timestamped value to a Whisper file."
     &= explicit
     &= name "push"
 
@@ -106,8 +112,12 @@ runCmd Info{..} = do
 
 runCmd Httpd{..} = httpd 8080 "localhost"
 
-runCmd Push{..} =
-  putStrLn "`push` command not implemented." -- TODO
+runCmd Push{..} = do
+  wsp <- openWhisper cmdFilename
+  now <- (floor . toRational) <$> getPOSIXTime
+  header <- readHeader wsp
+  updateWhisper wsp header now cmdValue
+  closeWhisper wsp
 
 runCmd Create{..} =
   createWhisper cmdFilename [(cmdPrecision, cmdSize)] 0.5 Average
