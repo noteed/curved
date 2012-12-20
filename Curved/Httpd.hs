@@ -62,7 +62,8 @@ dataCsv :: FilePath -> Handler App App ()
 dataCsv filename = do
   points <- liftIO $ do
     wsp <- openWhisper filename
-    Archive points <- readArchive wsp 0
+    now <- (floor . toRational) <$> liftIO getPOSIXTime
+    Archive points <- readArchive wsp 0 now
     closeWhisper wsp
     return points
 

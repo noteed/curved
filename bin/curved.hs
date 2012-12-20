@@ -3,7 +3,9 @@
 {-# LANGUAGE RecordWildCards #-}
 module Main (main) where
 
+import Control.Applicative ((<$>))
 import Data.Char (toLower)
+import Data.Time.Clock.POSIX (getPOSIXTime)
 import System.Console.CmdArgs.Implicit
 
 import Curved.Httpd
@@ -84,7 +86,9 @@ cmdCreate = Create
 runCmd :: Cmd -> IO ()
 runCmd Info{..} = do
   wsp <- openWhisper cmdFilename
+  now <- (floor . toRational) <$> getPOSIXTime
   Header{..} <- readHeader wsp
+  archives <- readArchives wsp now
   let MetaData{..} = hMetaData
   closeWhisper wsp
 
@@ -98,6 +102,7 @@ runCmd Info{..} = do
         ++ ", size=" ++ show (aiSize ai)
         ++ ", offset=" ++ show aiOffset
   mapM_ (putStrLn . f) hArchiveInfo
+  mapM_ (\(Archive points) -> mapM_ print points) archives
 
 runCmd Httpd{..} = httpd 8080 "localhost"
 

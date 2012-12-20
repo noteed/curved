@@ -31,5 +31,6 @@ executable curved
   hs-source-dirs:      bin/
   build-depends:       base == 4.*,
                        cmdargs == 0.9.*,
-                       curved
+                       curved,
+                       time
   ghc-options:         -Wall
