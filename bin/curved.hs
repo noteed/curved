@@ -91,12 +91,12 @@ cmdCreate = Create
 -- | Run a sub-command.
 runCmd :: Cmd -> IO ()
 runCmd Info{..} = do
-  wsp <- openWhisper cmdFilename
+  w <- openWhisper cmdFilename
   now <- (floor . toRational) <$> getPOSIXTime
-  Header{..} <- readHeader wsp
-  archives <- readArchives wsp now
-  let MetaData{..} = hMetaData
-  closeWhisper wsp
+  archives <- readArchives w now
+  let Header{..} = whisperHeader w
+      MetaData{..} = hMetaData
+  closeWhisper w
 
   putStrLn $ cmdFilename ++ ": period=" ++ show mdMaxRetention
     ++ ", aggregation=" ++ map toLower (show mdAggregationType)
@@ -113,11 +113,10 @@ runCmd Info{..} = do
 runCmd Httpd{..} = httpd 8080 "localhost"
 
 runCmd Push{..} = do
-  wsp <- openWhisper cmdFilename
+  w <- openWhisper cmdFilename
   now <- (floor . toRational) <$> getPOSIXTime
-  header <- readHeader wsp
-  updateWhisper wsp header now cmdValue
-  closeWhisper wsp
+  updateWhisper w now cmdValue
+  closeWhisper w
 
 runCmd Create{..} =
   createWhisper cmdFilename [(cmdPrecision, cmdSize)] 0.5 Average

@@ -8,6 +8,7 @@ module Data.Whisper
   , updateWhisper
   , aiRetention, aiSize
   , AggregationType(..)
+  , Whisper(..)
   , Header(..), MetaData(..), ArchiveInfo(..), Archive(..), Point(..)
   ) where
 
@@ -34,9 +35,6 @@ import System.Posix.Types (Fd)
 -- TODO Some Int are used for unsigned long, which is not correct.
 -- TODO Replace peekElemOff with plusPtr by peekByteOff.
 -- TODO Use fcntl to lock the file.
--- TODO Probably the header can be directly available in the Whisper data type
--- (probably it is almost always necessary to know the complete file layout (as
--- provided by the ArchiveInfo) to do any meaningful operation).
 
 #include <sys/mman.h>
 
@@ -61,7 +59,11 @@ enum curved_PROT_WRAPPER
 
 {# enum curved_PROT_WRAPPER as PROT_WRAPPER {} with prefix = "curved_" #}
 
-data Whisper = Whisper { whisperPtr :: Ptr (), whisperFd :: Fd }
+
+-- | The header is included in the Whisper data type, so it is read direclty
+-- when the Whisper file is open. (Most operation needs the header data, by
+-- doing so we can read it only once.)
+data Whisper = Whisper { whisperPtr :: Ptr (), whisperFd :: Fd, whisperHeader :: Header }
 
 data Header = Header
   { hMetaData :: MetaData
@@ -100,78 +102,114 @@ data Point = Point Int Double
   deriving Show
 
 -- | Open a memory-mapped file.
-openWhisper :: FilePath -> IO Whisper
-openWhisper path = do
+openMMapFile :: FilePath -> IO (Ptr (), Fd)
+openMMapFile path = do
   fd <- openFd path ReadWrite Nothing defaultFileFlags
   flip finally (closeFd fd) $ do -- TODO Can we close the fd before unmmap'ing it ?
     stat <- getFdStatus fd
     let size = fileSize stat
     ptr <- {# call mmap #} nullPtr (fromIntegral size) (fromInteger $ fromEnum PROT_READ .|. fromEnum PROT_WRITE) (fromInteger $ fromEnum MAP_SHARED) (fromIntegral fd) 0
     if ptr == nullPtr
-      then error "Data.Whisper.openWhisper: unable to mmap file."
-      else return $ Whisper (castPtr ptr) fd
+      then error "Data.Whisper.mmapFile: unable to mmap file."
+      else return (ptr, fd)
 
-closeWhisper :: Whisper -> IO ()
-closeWhisper (Whisper ptr fd) = do
+-- | Close a memory-mapped file.
+closeMMapFile ptr fd = do
   _ <- {# call munmap #} ptr (fromIntegral fd) -- TODO check error code
   return ()
 
 -- | Create a memory-mapped file of the given size.
-openWhisperSize :: FilePath -> Int -> IO Whisper
-openWhisperSize path size = do
+createMMapFile path size = do
   fd <- openFd path ReadWrite (Just $ ownerReadMode `unionFileModes` ownerWriteMode) defaultFileFlags
   -- Write a dummy byte to size correctly the underlying file befor
   -- memory-mapping it.
-  fdSeek fd AbsoluteSeek (fromIntegral $ size - 1) >>= print --TODO check return value ? check size > 0 ?
-  fdWrite fd "\0" >>= print
+  fdSeek fd AbsoluteSeek (fromIntegral $ size - 1) --TODO check return value ? check size > 0 ?
+  fdWrite fd "\0"
   flip finally (closeFd fd) $ do -- TODO Can we close the fd before unmmap'ing it ?
     ptr <- {# call mmap #} nullPtr (fromIntegral size) (fromInteger $ fromEnum PROT_WRITE) (fromInteger $ fromEnum MAP_SHARED) (fromIntegral fd) 0 -- TODO | PROT_READ
     print ptr
     if ptr == nullPtr
-      then error "Data.Whisper.openWhisperSize: unable to mmap file."
-      else return $ Whisper ptr fd
+      then error "Data.Whisper.createMMapFile: unable to mmap file."
+      else return (ptr, fd)
 
+openWhisper :: FilePath -> IO Whisper
+openWhisper path = do
+  (ptr, fd) <- openMMapFile path
+  header <- readHeader $ Whisper ptr fd undefined
+  return $ Whisper ptr fd header
+
+closeWhisper :: Whisper -> IO ()
+closeWhisper (Whisper ptr fd _) = closeMMapFile ptr fd
+
+openWhisperSize :: FilePath -> Header -> IO Whisper
+openWhisperSize path header@Header{..} = do
+  let size = (headerSize (length hArchiveInfo) + sum (map aiPoints hArchiveInfo) * sizeOf (undefined :: Point))
+      archives = map (Archive . flip replicate (Point 0 0) . aiPoints) hArchiveInfo
+  (ptr, fd) <- createMMapFile path size
+  let w = Whisper ptr fd header
+  writeHeader w header
+  writeArchives w hArchiveInfo archives
+  return w
+
+-- | Read a complete header, i.e. both the meta data and all the archive info.
 readHeader :: Whisper -> IO Header
 readHeader w = do
   md <- readMetaData w
   ai <- mapM (readArchiveInfo w) [0..fromIntegral (mdArchiveCount md) - 1]
   return $ Header md ai
 
+-- | Read the Whisper file meta data. You probably do not need this: they are
+-- available in the header (see `readHeader`).
 readMetaData :: Whisper -> IO MetaData
 readMetaData Whisper{..} = peek (castPtr whisperPtr)
 
+-- | Read the nth archive info.
 readArchiveInfo :: Whisper -> Int -> IO ArchiveInfo
 readArchiveInfo Whisper{..} n =
   peekElemOff (castPtr whisperPtr `plusPtr` sizeOf (undefined :: MetaData)) n
 
 -- | Read the nth archive, considering it as a window ending at `timestamp`.
+-- If you do not want outdated points to be filtered out, and points to be
+-- re-ordered (e.g. for debugging purpose), you can use `readRawArchive`.
 readArchive :: Whisper -> Int -> Timestamp -> IO Archive
 readArchive w@Whisper{..} n timestamp = do
-  ai@ArchiveInfo{..} <- readArchiveInfo w n -- TODO the archiveInfo is usually already read.
+  ai@ArchiveInfo{..} <- readArchiveInfo w n
   if aiPoints <= 0
     then return $ Archive []
     else do
       -- The very first point presence indicates if data are present.
-      Point ts _ <- readPoint w aiOffset 0
+      Point ts _ <- readPoint w ai 0
       if ts == 0
         then return $ Archive []
         else do
           -- The first point in the archive is used as a base point
           -- to index into the archive data.
-          ps <- mapM (readPoint w aiOffset) [0..aiPoints - 1]
-          let (after, before) = splitAt (slot ai ts timestamp) ps
-          return . Archive $ lockstep ai timestamp $ before ++ after
+          ps <- mapM (readPoint w ai) [0..aiPoints - 1]
+          let (after, before) = splitAt (nextSlot ai ts timestamp) ps
+          return . Archive $ keepWindow ai timestamp $ before ++ after
 
--- TODO instead of passing the aiOffset, we could just pass the ArchiveInfo.
-readPoint :: Whisper -> Int -> Int -> IO Point
-readPoint Whisper{..} archiveOffset n =
-  peekElemOff (castPtr whisperPtr `plusPtr` archiveOffset) n
+-- | Read the nth archive as-is, i.e. outdated points are not filtered out,
+-- and points are not re-ordered based on a timestamp. See `readArchive` if
+-- you do not need the raw approach.
+readRawArchive :: Whisper -> Int -> IO Archive -- TODO differentiate Archive and RawArchive, include from/to/step in the Archive ?
+readRawArchive w@Whisper{..} n = do
+  ai@ArchiveInfo{..} <- readArchiveInfo w n
+  ps <- mapM (readPoint w ai) [0..aiPoints - 1]
+  return $ Archive ps
+
+-- | Read the nth point from an archive.
+readPoint :: Whisper -> ArchiveInfo -> Int -> IO Point
+readPoint Whisper{..} ArchiveInfo{..} n =
+  peekElemOff (castPtr whisperPtr `plusPtr` aiOffset) n
 
 readArchives :: Whisper -> Timestamp -> IO [Archive]
 readArchives w timestamp = do
-  Header{..} <- readHeader w
+  let Header{..} = whisperHeader w
   mapM (flip (readArchive w) timestamp) [0..length hArchiveInfo - 1]
 
+-- | Write a new Header in a Whisper file. Note the the header data is
+-- available in the Whisper data type and you may want to track the changes
+-- you have made.
 writeHeader :: Whisper -> Header -> IO ()
 writeHeader w Header{..} = do
   writeMetaData w hMetaData
@@ -185,12 +223,12 @@ writeArchiveInfo Whisper{..} n =
   pokeElemOff (castPtr whisperPtr `plusPtr` sizeOf (undefined :: MetaData)) n
 
 writeArchive :: Whisper -> ArchiveInfo -> Archive -> IO ()
-writeArchive w@Whisper{..} ArchiveInfo{..} (Archive points) =
-  mapM_ (uncurry $ writePoint w aiOffset) $ zip [0..] points
+writeArchive w@Whisper{..} ai (Archive points) =
+  mapM_ (uncurry $ writePoint w ai) $ zip [0..] points
 
-writePoint :: Whisper -> Int -> Int -> Point -> IO ()
-writePoint Whisper{..} archiveOffset n =
-  pokeElemOff (castPtr whisperPtr `plusPtr` archiveOffset) n
+writePoint :: Whisper -> ArchiveInfo -> Int -> Point -> IO ()
+writePoint Whisper{..} ArchiveInfo{..} n =
+  pokeElemOff (castPtr whisperPtr `plusPtr` aiOffset) n
 
 writeArchives :: Whisper -> [ArchiveInfo] -> [Archive] -> IO ()
 writeArchives w infos archives =
@@ -205,54 +243,63 @@ createWhisper filename archiveInfos_ factor aggregation = do
       retention = aiRetention $ last archiveInfos'
       meta = MetaData aggregation retention factor (length archiveInfos)
       header = Header meta archiveInfos'
-      archives = map (Archive . flip replicate (Point 0 0) . snd) archiveInfos
 
-  w@Whisper{..} <- openWhisperSize filename (headerSize (length archiveInfos) + sum (map snd archiveInfos) * sizeOf (undefined :: Point))
-  writeHeader w header
-  writeArchives w archiveInfos' archives
+  w@Whisper{..} <- openWhisperSize filename header
   closeWhisper w
 
+-- | Given an ArchiveInfo and a timestamp, return the next slot in the archive.
+nextSlot ArchiveInfo{..} base timestamp =
+  (((timestamp - base) `div` aiSecondsPerPoint) + 1) `mod` aiPoints
+
 -- | Given an ArchiveInfo and a timestamp, return its slot in the archive.
-slot ArchiveInfo{..} base timestamp = (((timestamp - base) `div` aiSecondsPerPoint) + 1) `mod` aiPoints
+slot ArchiveInfo{..} base timestamp =
+  ((timestamp - base) `div` aiSecondsPerPoint) `mod` aiPoints
 
-slot' ArchiveInfo{..} base timestamp = ((timestamp - base) `div` aiSecondsPerPoint) `mod` aiPoints
+-- | Compute the timestamp at the very start of the window given the ending
+-- timestamp.
+startTimestamp ai timestamp = slotTimestamp ai timestamp
+  - aiRetention ai + aiSecondsPerPoint ai
 
-start ai timestamp = timestamp - (timestamp `mod` aiSecondsPerPoint ai) - aiRetention ai + aiSecondsPerPoint ai
-
+-- | Return the timestamp "identifying" the slot containg the given timestamp.
 slotTimestamp ai timestamp = timestamp - (timestamp `mod` aiSecondsPerPoint ai)
 
-lockstep ai@ArchiveInfo{..} timestamp points = zipWith f [s, s + aiSecondsPerPoint ..] points
-  where s = start ai timestamp
-        f ts (Point ts' value) | ts == ts' = Point ts value
-                               | otherwise = Point 0 0
+-- | Zero out any point whose timestamp is not in the time window ending at
+-- the given timestamp.
+keepWindow ai@ArchiveInfo{..} timestamp points =
+  zipWith f [s, s + aiSecondsPerPoint ..] points
+  where
+  s = startTimestamp ai timestamp
+  f ts (Point ts' value) | ts == ts' = Point ts value
+                         | otherwise = Point 0 0
 
--- | sizeOf a complete header, given the number of archives.
+-- | sizeOf (i.e. in bytes, when using its Storable instance) of a complete
+-- header, given the number of archives.
 headerSize :: Int -> Int
-headerSize n = sizeOf (undefined :: MetaData) + sizeOf (undefined :: ArchiveInfo) * n
+headerSize n =
+  sizeOf (undefined :: MetaData) + sizeOf (undefined :: ArchiveInfo) * n
 
 -- | Given the precision and number of points of an archive (i.e. its
 -- ArchiveInfo without its offset), and its predecessor archive, create a
 -- complete ArchiveInfo (i.e. with its offset).
 toAI :: ArchiveInfo -> (Int, Int) -> ArchiveInfo
-toAI ArchiveInfo{..} (precision, points) =
-  ArchiveInfo (aiOffset + sizeOf (undefined :: Point) * aiPoints) precision points
+toAI ArchiveInfo{..} (precision, points) = ArchiveInfo
+  (aiOffset + sizeOf (undefined :: Point) * aiPoints) precision points
 
 type Timestamp = Int
 
-updateWhisper :: Whisper -> Header -> Int -> Double -> IO ()
-updateWhisper w@Whisper{..} header timestamp value = do
+updateWhisper :: Whisper -> Int -> Double -> IO ()
+updateWhisper w@Whisper{..} timestamp value = do
   let archiveIndex = 0 -- TODO correctly select thearchive to update and propagate the value.
-      ai = hArchiveInfo header !! archiveIndex
-      offset = aiOffset ai
-  Point ts _ <- readPoint w offset 0
-  -- TODO then patter of reading the first point and decide if the archive has already some data is reused in readArchive.
+      ai = hArchiveInfo whisperHeader !! archiveIndex
+  Point ts _ <- readPoint w ai 0
+  -- TODO then pattern of reading the first point and decide if the archive has already some data is reused in readArchive.
   -- (B.t.w. I don't think it was necessary: only the modulo (without the base timestamp) was enough. Any gain
   -- exists only for empty or almost emtpy files.
   if ts == 0
-    then writePoint w offset 0 (Point (slotTimestamp ai timestamp) value)
+    then writePoint w ai 0 (Point (slotTimestamp ai timestamp) value)
     else do
-      let i = slot' (hArchiveInfo header !! archiveIndex) ts timestamp
-      writePoint w offset i (Point (slotTimestamp ai timestamp )value)
+      let i = slot (hArchiveInfo whisperHeader !! archiveIndex) ts timestamp
+      writePoint w ai i (Point (slotTimestamp ai timestamp )value)
 
 instance Storable MetaData where
   sizeOf _ =
