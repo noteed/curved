@@ -4,10 +4,12 @@
 module Main (main) where
 
 import Control.Applicative ((<$>))
+import Control.Concurrent (forkIO)
 import Data.Char (toLower)
 import Data.Time.Clock.POSIX (getPOSIXTime)
 import System.Console.CmdArgs.Implicit
 
+import Curved.Carbon
 import Curved.Httpd
 import Data.Whisper
 
@@ -110,13 +112,13 @@ runCmd Info{..} = do
   mapM_ (putStrLn . f) hArchiveInfo
   mapM_ (\(Archive points) -> mapM_ print points) archives
 
-runCmd Httpd{..} = httpd 8080 "localhost"
+runCmd Httpd{..} = do
+  forkIO $ receivePoints 2006
+  httpd 8081 "localhost"
 
 runCmd Push{..} = do
-  w <- openWhisper cmdFilename
   now <- (floor . toRational) <$> getPOSIXTime
-  updateWhisper w now cmdValue
-  closeWhisper w
+  updateWhisperFile cmdFilename now cmdValue
 
 runCmd Create{..} =
   createWhisper cmdFilename [(cmdPrecision, cmdSize)] 0.5 Average

@@ -1,7 +1,7 @@
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE RecordWildCards #-}
 module Data.Whisper
-  ( closeWhisper, openWhisper, createWhisper
+  ( closeWhisper, openWhisper, createWhisper, updateWhisperFile
   , readHeader, readMetaData, readArchiveInfo
   , readArchive, readPoint
   , readArchives
@@ -131,6 +131,12 @@ createMMapFile path size = do
     if ptr == nullPtr
       then error "Data.Whisper.createMMapFile: unable to mmap file."
       else return (ptr, fd)
+
+updateWhisperFile :: FilePath -> Timestamp -> Double -> IO ()
+updateWhisperFile filename timestamp value = do
+  w <- openWhisper filename
+  updateWhisper w timestamp value
+  closeWhisper w
 
 openWhisper :: FilePath -> IO Whisper
 openWhisper path = do

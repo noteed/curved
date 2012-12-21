@@ -8,14 +8,16 @@ import Data.Time.Clock.POSIX (getPOSIXTime)
 import Network.Socket
 import Network.BSD
 import Data.List
+import System.Environment (getArgs)
 import System.IO
 
 -- carbon-cache server:
-hostname = "127.0.0.1"
-port = "2003"
+-- hostname = "127.0.0.1"
+-- port = "2003"
 
 main :: IO ()
 main = do
+  [hostname, port] <- getArgs
   now <- (show . floor . toRational) <$> getPOSIXTime
   content <- readFile "/proc/loadavg"
   putStr content
