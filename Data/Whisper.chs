@@ -13,6 +13,7 @@ module Data.Whisper
 
 import Prelude hiding (Enum, fromEnum)
 
+import Control.Applicative ((<$>), (<*>))
 import Control.Exception (finally)
 import Data.Bits ((.|.))
 import Data.Function (on)
@@ -262,16 +263,11 @@ instance Storable MetaData where
 
   alignment _ = alignment (undefined :: Word32)
 
-  peek ptr = do
-    a <- peek (castPtr ptr)
-    b <- fromIntegral `fmap` peekBE (castPtr ptr `plusPtr` 4 :: Ptr Word32)
-    c <- coerce `fmap` peekBE (castPtr ptr `plusPtr` 8)
-    d <- fromIntegral `fmap` peekBE (castPtr ptr `plusPtr` 12 :: Ptr Word32)
-    return $ MetaData a b c d
-    where
-    coerce :: Word32 -> Float
-    coerce x = unsafePerformIO $ with x $ \p ->
-      peek (castPtr p) :: IO Float
+  peek ptr = MetaData
+    <$> peek (castPtr ptr)
+    <*> peekWord32beAsNum (castPtr ptr `plusPtr` 4)
+    <*> peekWord32beAsFloat (castPtr ptr `plusPtr` 8)
+    <*> peekWord32beAsNum (castPtr ptr `plusPtr` 12)
 
   poke ptr MetaData{..} = do
     poke (castPtr ptr) mdAggregationType
@@ -291,11 +287,10 @@ instance Storable ArchiveInfo where
 
   alignment _ = alignment (undefined :: Word32)
 
-  peek ptr = do
-    a <- fromIntegral `fmap` peekBE (castPtr ptr :: Ptr Word32)
-    b <- fromIntegral `fmap` peekBE (castPtr ptr `plusPtr` 4 :: Ptr Word32)
-    c <- fromIntegral `fmap` peekBE (castPtr ptr `plusPtr` 8 :: Ptr Word32)
-    return $ ArchiveInfo a b c
+  peek ptr = ArchiveInfo
+    <$> peekWord32beAsNum (castPtr ptr)
+    <*> peekWord32beAsNum (castPtr ptr `plusPtr` 4)
+    <*> peekWord32beAsNum (castPtr ptr `plusPtr` 8)
 
   poke ptr ArchiveInfo{..} = do
     pokeBE (castPtr ptr) (fromIntegral aiOffset :: Word32)
@@ -307,7 +302,7 @@ instance Storable AggregationType where
 
   alignment _ = alignment (undefined :: Word32)
 
-  peek ptr = agg `fmap` peekBE (castPtr ptr :: Ptr Word32)
+  peek ptr = agg <$> peekBE (castPtr ptr :: Ptr Word32)
     where
     agg 1 = Average
     agg 2 = Sum
@@ -330,14 +325,9 @@ instance Storable Point where
 
   alignment _ = alignment (undefined :: Word32)
 
-  peek ptr = do
-    a <- fromIntegral `fmap` peekBE (castPtr ptr :: Ptr Word32)
-    b <- coerce `fmap` peekBE (castPtr ptr `plusPtr` 4)
-    return $ Point a b
-    where
-    coerce :: Word64 -> Double
-    coerce x = unsafePerformIO $ with x $ \p ->
-      peek (castPtr p) :: IO Double
+  peek ptr = Point
+    <$> peekWord32beAsNum (castPtr ptr)
+    <*> peekWord64beAsDouble (castPtr ptr `plusPtr` 4)
 
   poke ptr (Point a b) = do
     pokeBE (castPtr ptr) (fromIntegral a :: Word32)
@@ -346,3 +336,20 @@ instance Storable Point where
     coerce :: Double -> Word64
     coerce x = unsafePerformIO $ with x $ \p ->
       peek (castPtr p) :: IO Word64
+
+peekWord32beAsNum :: Num a => Ptr Word32 -> IO a
+peekWord32beAsNum ptr = fromIntegral <$> peekBE ptr
+
+peekWord32beAsFloat :: Ptr Word32 -> IO Float
+peekWord32beAsFloat ptr = coerce <$> peekBE ptr
+  where
+  coerce :: Word32 -> Float
+  coerce x = unsafePerformIO $ with x $ \p ->
+    peek (castPtr p) :: IO Float
+
+peekWord64beAsDouble :: Ptr Word64 -> IO Double
+peekWord64beAsDouble ptr = coerce <$> peekBE ptr
+  where
+  coerce :: Word64 -> Double
+  coerce x = unsafePerformIO $ with x $ \p ->
+    peek (castPtr p) :: IO Double
