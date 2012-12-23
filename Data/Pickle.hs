@@ -1,11 +1,16 @@
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
--- | Very partial implementation of the Python Pickle Virtual Machine: i.e.
--- parses pickled data into opcodes, then executes the opcodes to construct a
--- (Haskell representation of a) Python object.
+
+-- | Very partial implementation of the Python Pickle Virtual Machine
+-- (protocol 2): i.e. parses pickled data into opcodes, then executes the
+-- opcodes to construct a (Haskell representation of a) Python object.
+
 module Data.Pickle where
 
 import Control.Applicative ((<$>), (<*>), (*>))
 import Control.Monad (when)
+import Control.Monad.State
+import Control.Monad.Writer
 import qualified Data.ByteString as S
 import Data.Attoparsec hiding (take)
 import qualified Data.Attoparsec as A
@@ -17,23 +22,25 @@ import Data.Map (Map)
 import qualified Data.Map as M
 import Data.Serialize.Put (runPut, putByteString, putWord8, Put)
 
+-- Note \128 is the same as \STX\x80\02, i.e. protocol 2.
+
 unpickle :: S.ByteString -> Either String Value
 unpickle s = do
-  xs <- parseOnly (protocol_2 >> many1 opcodes) s
-  execute xs [] (IM.empty)
+  xs <- parseOnly (string "\128\STX" *> many1 opcodes) s
+  unpickle' xs
 
 pickle :: Value -> S.ByteString
 pickle value = runPut $ do
   putByteString "\128\STX"
-  pickle' value
+  mapM_ serialize . runPickler $ pickle' value
   putByteString "."
 
 ----------------------------------------------------------------------
--- Pickle opcode parser
+-- Pickle opcodes parser
 ----------------------------------------------------------------------
 
-protocol_2 :: Parser ()
-protocol_2 = string "\128\STX" *> return ()-- \x80\02, i.e. protocol 2
+-- Maybe parsing could be done with a big switch and only cereal,
+-- instead of relying on attoparsec's "choice" combinator.
 
 opcodes :: Parser OpCode
 empty_dict :: Parser OpCode
@@ -69,6 +76,20 @@ setitems = string "u" *> return SETITEMS
 stop = string "." *> return STOP
 
 ----------------------------------------------------------------------
+-- Pickle opcodes serialization
+----------------------------------------------------------------------
+
+serialize opcode = case opcode of
+  BINPUT i -> putByteString "q" >> putWord8 (fromIntegral i)
+  SHORT_BINSTRING s -> do
+    putByteString "U"
+    putWord8 . fromIntegral $ S.length s
+    putByteString s
+  EMPTY_DICT -> putByteString "}"
+  MARK -> putByteString "("
+  SETITEMS -> putByteString "u"
+
+----------------------------------------------------------------------
 -- Pickle opcodes
 ----------------------------------------------------------------------
 
@@ -94,8 +115,11 @@ data Value =
   deriving (Eq, Ord, Show)
 
 ----------------------------------------------------------------------
--- Pickle machine
+-- Pickle machine (opcodes to value)
 ----------------------------------------------------------------------
+
+unpickle' :: [OpCode] -> Either String Value
+unpickle' xs = execute xs [] (IM.empty)
 
 type Stack = [Value]
 
@@ -129,43 +153,45 @@ addToDict l (Dict d) = Dict $ foldl' add d l
   where add d (a, b) = M.insert a b d
 
 ----------------------------------------------------------------------
--- Serialization (i.e. pickling)
+-- Pickling (value to opcodes)
 ----------------------------------------------------------------------
 
--- Maybe I should generate the opcode first, then serialize them.
+newtype Pickler a = Pickler { runP :: WriterT [OpCode] (State (Map Value Int)) a }
+  deriving (Monad, MonadWriter [OpCode], MonadState (Map Value Int))
 
--- TODO normally some BINPUT must be issued, but some state is thus needed
--- (i.e. something like the memo used during the opcode execution).
--- (By first issuing the opcodes then serializing them, inserting the
--- BINPUT/GETPU could be done afterward.)
+runPickler :: Pickler () -> [OpCode]
+runPickler p = evalState (execWriterT (runP p)) M.empty
 
-pickle' :: Value -> Put
+pickle' :: Value -> Pickler ()
 pickle' value = case value of
   Dict d -> pickleDict d
   BinString s -> pickleBinString s
   x -> error $ "TODO: pickle " ++ show x
 
-pickleDict :: Map Value Value -> Put
+-- TODO actually lookup values in the map, reusing their key.
+binput' :: Value -> Pickler ()
+binput' value = do
+  i <- gets M.size
+  m <- get
+  put (M.insert value i m)
+  tell [BINPUT i]
+
+pickleDict :: Map Value Value -> Pickler ()
 pickleDict d = do
-  putByteString "}"
-  putBINPUT
+  tell [EMPTY_DICT]
+  binput' (Dict d)
 
   let kvs = M.toList d
   when (not $ null kvs) $ do
-    putByteString "("
+    tell [MARK]
     mapM_ (\(k, v) -> pickle' k >> pickle' v) kvs
-    putByteString "u"
+    tell [SETITEMS]
 
 -- TODO depending on the string length, it should not always be a SHORT_BINSTRING
-pickleBinString :: S.ByteString -> Put
+pickleBinString :: S.ByteString -> Pickler ()
 pickleBinString s = do
-  putByteString "U"
-  putWord8 . fromIntegral $ S.length s
-  putByteString s
-  putBINPUT
-
-putBINPUT :: Put
-putBINPUT = putByteString "q\NUL" -- TODO not always zero.
+  tell [SHORT_BINSTRING s]
+  binput' (BinString s)
 
 ----------------------------------------------------------------------
 -- Manipulate Values
