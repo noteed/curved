@@ -14,19 +14,15 @@ import qualified Data.IntMap as IM
 import Data.List (foldl')
 import Data.Map (Map)
 import qualified Data.Map as M
-import System.Environment (getArgs)
 
-main :: IO ()
-main = do
-  [filename] <- getArgs
-  content <- S.readFile filename
-  print content
+unpickle :: S.ByteString -> Either String Value
+unpickle s = do
+  xs <- parseOnly (protocol_2 >> many1 opcodes) s
+  execute xs [] (IM.empty)
 
-  case parseOnly (protocol_2 >> many1 opcodes) content of
-    Left err -> error err
-    Right xs -> do
-      print xs
-      print $ execute xs [] (IM.empty)
+----------------------------------------------------------------------
+-- Pickle opcode parser
+----------------------------------------------------------------------
 
 protocol_2 :: Parser ()
 protocol_2 = string "\128\STX" *> return ()-- \x80\02, i.e. protocol 2
@@ -64,6 +60,10 @@ setitems = string "u" *> return SETITEMS
 
 stop = string "." *> return STOP
 
+----------------------------------------------------------------------
+-- Pickle opcodes
+----------------------------------------------------------------------
+
 data OpCode =
     EMPTY_DICT
   | BINPUT Int
@@ -74,11 +74,20 @@ data OpCode =
   | STOP
   deriving Show
 
+----------------------------------------------------------------------
+-- Pyhon value representation
+----------------------------------------------------------------------
+
+-- Maybe I can call them Py? And Have IsString/Num instances?
 data Value =
     Dict (Map Value Value)
   | BinString S.ByteString
   | MarkObject -- Urk, not really a value.
   deriving (Eq, Ord, Show)
+
+----------------------------------------------------------------------
+-- Pickle machine
+----------------------------------------------------------------------
 
 type Stack = [Value]
 
@@ -110,3 +119,22 @@ executeSetitems l (a:b:stack) memo = executeSetitems ((b, a) : l) stack memo
 
 addToDict l (Dict d) = Dict $ foldl' add d l
   where add d (a, b) = M.insert a b d
+
+----------------------------------------------------------------------
+-- Manipulate Values
+----------------------------------------------------------------------
+
+dictGet :: Value -> Value -> Either String (Maybe Value)
+dictGet (Dict d) v = return $ M.lookup v d
+dictGet _ _ = Left "dictGet: not a dict."
+
+dictGet' :: Value -> Value -> Either String Value
+dictGet' (Dict d) v = case M.lookup v d of
+  Just value -> return value
+  Nothing -> Left "dictGet': no such key."
+dictGet' _ _ = Left "dictGet': not a dict."
+
+dictGetString :: Value -> S.ByteString -> Either String S.ByteString
+dictGetString (Dict d) s = case M.lookup (BinString s) d of
+  Just (BinString s') -> return s'
+  _ -> Left "dictGetString: not a dict, or no such key."

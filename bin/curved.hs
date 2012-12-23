@@ -114,6 +114,7 @@ runCmd Info{..} = do
 
 runCmd Httpd{..} = do
   forkIO $ receivePoints 2006
+  forkIO $ receiveQueries 7002
   httpd 8081 "localhost"
 
 runCmd Push{..} = do
