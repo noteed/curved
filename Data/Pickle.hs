@@ -5,6 +5,7 @@
 module Data.Pickle where
 
 import Control.Applicative ((<$>), (<*>), (*>))
+import Control.Monad (when)
 import qualified Data.ByteString as S
 import Data.Attoparsec hiding (take)
 import qualified Data.Attoparsec as A
@@ -14,11 +15,18 @@ import qualified Data.IntMap as IM
 import Data.List (foldl')
 import Data.Map (Map)
 import qualified Data.Map as M
+import Data.Serialize.Put (runPut, putByteString, putWord8, Put)
 
 unpickle :: S.ByteString -> Either String Value
 unpickle s = do
   xs <- parseOnly (protocol_2 >> many1 opcodes) s
   execute xs [] (IM.empty)
+
+pickle :: Value -> S.ByteString
+pickle value = runPut $ do
+  putByteString "\128\STX"
+  pickle' value
+  putByteString "."
 
 ----------------------------------------------------------------------
 -- Pickle opcode parser
@@ -119,6 +127,45 @@ executeSetitems l (a:b:stack) memo = executeSetitems ((b, a) : l) stack memo
 
 addToDict l (Dict d) = Dict $ foldl' add d l
   where add d (a, b) = M.insert a b d
+
+----------------------------------------------------------------------
+-- Serialization (i.e. pickling)
+----------------------------------------------------------------------
+
+-- Maybe I should generate the opcode first, then serialize them.
+
+-- TODO normally some BINPUT must be issued, but some state is thus needed
+-- (i.e. something like the memo used during the opcode execution).
+-- (By first issuing the opcodes then serializing them, inserting the
+-- BINPUT/GETPU could be done afterward.)
+
+pickle' :: Value -> Put
+pickle' value = case value of
+  Dict d -> pickleDict d
+  BinString s -> pickleBinString s
+  x -> error $ "TODO: pickle " ++ show x
+
+pickleDict :: Map Value Value -> Put
+pickleDict d = do
+  putByteString "}"
+  putBINPUT
+
+  let kvs = M.toList d
+  when (not $ null kvs) $ do
+    putByteString "("
+    mapM_ (\(k, v) -> pickle' k >> pickle' v) kvs
+    putByteString "u"
+
+-- TODO depending on the string length, it should not always be a SHORT_BINSTRING
+pickleBinString :: S.ByteString -> Put
+pickleBinString s = do
+  putByteString "U"
+  putWord8 . fromIntegral $ S.length s
+  putByteString s
+  putBINPUT
+
+putBINPUT :: Put
+putBINPUT = putByteString "q\NUL" -- TODO not always zero.
 
 ----------------------------------------------------------------------
 -- Manipulate Values
