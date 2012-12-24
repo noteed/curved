@@ -13,14 +13,15 @@ import Control.Monad.Writer
 import qualified Data.ByteString as S
 import Data.Attoparsec hiding (take)
 import qualified Data.Attoparsec as A
+import Data.Int (Int32)
 import Data.IntMap (IntMap)
 import qualified Data.IntMap as IM
 import Data.List (foldl')
 import Data.Map (Map)
 import qualified Data.Map as M
-import Data.Serialize.Get (getWord64be, runGet)
-import Data.Serialize.Put (runPut, putByteString, putWord8, putWord64be, Put)
-import Data.Word (Word64)
+import Data.Serialize.Get (getWord16le, getWord32le, getWord64be, runGet)
+import Data.Serialize.Put (runPut, putByteString, putWord8, putWord16le, putWord32le, putWord64be, Put)
+import Data.Word (Word32, Word64)
 import Foreign.Marshal.Utils (with)
 import Foreign.Ptr (castPtr)
 import Foreign.Storable (peek)
@@ -47,18 +48,18 @@ pickle value = runPut $ do
 -- instead of relying on attoparsec's "choice" combinator.
 
 opcodes :: Parser OpCode
-empty_dict, empty_list, tuple1, tuple2 :: Parser OpCode
+empty_dict, empty_list, empty_tuple, tuple1, tuple2 :: Parser OpCode
 binput, mark :: Parser OpCode
-binint1, binfloat :: Parser OpCode
+binint, binint1, binint2, binfloat :: Parser OpCode
 short_binstring :: Parser OpCode
 setitem, setitems :: Parser OpCode
 append, appends :: Parser OpCode
 stop :: Parser OpCode
 
 opcodes = choice
-  [ empty_dict, empty_list, tuple1, tuple2
+  [ empty_dict, empty_list, empty_tuple, tuple1, tuple2
   , binput, mark
-  , binint1, binfloat
+  , binint, binint1, binint2, binfloat
   , short_binstring
   , setitem, setitems
   , append, appends
@@ -69,11 +70,17 @@ empty_dict = string "}" *> return EMPTY_DICT
 
 empty_list = string "]" *> return EMPTY_LIST
 
+empty_tuple = string ")" *> return EMPTY_TUPLE
+
 binput = string "q" *> (BINPUT . fromIntegral <$> anyWord8)
 
 mark = string "(" *> return MARK
 
+binint = string "J" *> (BININT <$> int4)
+
 binint1 = string "K" *> (BININT1 . fromIntegral <$> anyWord8)
+
+binint2 = string "M" *> (BININT2 <$> uint2)
 
 binfloat = string "G" *> (BINFLOAT <$> float8)
 
@@ -108,6 +115,24 @@ float8 = do
   coerce x = unsafePerformIO $ with x $ \p ->
     peek (castPtr p) :: IO Double
 
+int4 :: Parser Int
+int4 = do
+  w <- runGet getWord32le <$> A.take 4
+  case w of
+    Left err -> fail err
+    Right x -> return . fromIntegral $ coerce x
+  where
+  coerce :: Word32 -> Int32
+  coerce x = unsafePerformIO $ with x $ \p ->
+    peek (castPtr p) :: IO Int32
+
+uint2 :: Parser Int
+uint2 = do
+  w <- runGet getWord16le <$> A.take 2
+  case w of
+    Left err -> fail err
+    Right x -> return $ fromIntegral x
+
 ----------------------------------------------------------------------
 -- Pickle opcodes serialization
 ----------------------------------------------------------------------
@@ -115,7 +140,9 @@ float8 = do
 serialize :: OpCode -> Put
 serialize opcode = case opcode of
   BINPUT i -> putByteString "q" >> putWord8 (fromIntegral i)
+  BININT i -> putByteString "J" >> putWord32le (fromIntegral i)
   BININT1 i -> putByteString "K" >> putWord8 (fromIntegral i)
+  BININT2 i -> putByteString "M" >> putUint2 i
   BINFLOAT d -> putByteString "G" >> putFloat8 d
   SHORT_BINSTRING s -> do
     putByteString "U"
@@ -123,6 +150,7 @@ serialize opcode = case opcode of
     putByteString s
   EMPTY_DICT -> putByteString "}"
   EMPTY_LIST -> putByteString "]"
+  EMPTY_TUPLE -> putByteString ")"
   TUPLE1 -> putByteString "\133"
   TUPLE2 -> putByteString "\134"
   MARK -> putByteString "("
@@ -139,6 +167,9 @@ putFloat8 d = putWord64be (coerce d)
     coerce x = unsafePerformIO $ with x $ \p ->
       peek (castPtr p) :: IO Word64
 
+putUint2 :: Int -> Put
+putUint2 d = putWord16le (fromIntegral d)
+
 ----------------------------------------------------------------------
 -- Pickle opcodes
 ----------------------------------------------------------------------
@@ -146,9 +177,12 @@ putFloat8 d = putWord64be (coerce d)
 data OpCode =
     EMPTY_DICT
   | EMPTY_LIST
+  | EMPTY_TUPLE
   | BINPUT Int
   | MARK
+  | BININT Int
   | BININT1 Int
+  | BININT2 Int
   | BINFLOAT Double
   | SHORT_BINSTRING S.ByteString
   | TUPLE1
@@ -202,8 +236,11 @@ executePartial (op:ops) stack memo = case executeOne op stack memo of
 executeOne :: OpCode -> Stack -> Memo -> Either String (Stack, Memo)
 executeOne EMPTY_DICT stack memo = return (Dict M.empty: stack, memo)
 executeOne EMPTY_LIST stack memo = return (List []: stack, memo)
+executeOne EMPTY_TUPLE stack memo = return (Tuple []: stack, memo)
 executeOne (BINPUT i) (s:stack) memo = return (s:stack, IM.insert i s memo)
+executeOne (BININT i) stack memo = return (BinInt i:stack, memo)
 executeOne (BININT1 i) stack memo = return (BinInt i:stack, memo)
+executeOne (BININT2 i) stack memo = return (BinInt i:stack, memo)
 executeOne (BINFLOAT d) stack memo = return (BinFloat d:stack, memo)
 executeOne (SHORT_BINSTRING s) stack memo = return (BinString s:stack, memo)
 executeOne MARK stack memo = return (MarkObject:stack, memo)
@@ -290,7 +327,7 @@ pickleList xs = do
       tell [APPENDS]
 
 pickleTuple :: [Value] -> Pickler ()
-pickleTuple [] = error "pickleTuple 0 TODO"
+pickleTuple [] = tell [EMPTY_TUPLE]
 pickleTuple [a] = do
   pickle' a
   tell [TUPLE1]
@@ -304,8 +341,9 @@ pickleTuple _ = error "pickleTuple n TODO"
 
 -- TODO depending on the int range, it should not always be a BININT1
 pickleBinInt :: Int -> Pickler ()
-pickleBinInt i = do
-  tell [BININT1 i]
+pickleBinInt i | i >= 0 && i < 256 = tell [BININT1 i]
+               | i >= 256 && i < 65536 = tell [BININT2 i]
+               | otherwise = tell [BININT i]
 
 -- TODO probably depends on the float range
 pickleBinFloat :: Double -> Pickler ()
