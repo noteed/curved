@@ -26,12 +26,17 @@ library
                        snap-core == 0.9.*,
                        snap-server == 0.9.*,
                        storable-endian,
+                       text == 0.11.*,
                        time,
-                       unix
-  exposed-modules:     Curved.Carbon,
+                       transformers == 0.2.*,
+                       unix,
+                       unordered-containers == 0.2.*
+  exposed-modules:     Curved.Cache,
+                       Curved.Carbon,
                        Curved.Httpd,
                        Data.Pickle,
-                       Data.Whisper
+                       Data.Whisper,
+                       Data.Whisper.Store
   build-tools:         c2hs >= 0.15
   ghc-options:         -Wall
 

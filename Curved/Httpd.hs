@@ -11,6 +11,7 @@ module Curved.Httpd where
 
 import Control.Applicative ((<$>))
 import Data.Time.Clock.POSIX (getPOSIXTime)
+import qualified Data.Text as T
 
 import Snap
 import Snap.Snaplet (wrapHandlers)
@@ -21,13 +22,14 @@ import Data.ByteString.Char8 (ByteString)
 import qualified Data.ByteString.Char8 as B
 
 import Data.Whisper
+import Curved.Cache
 
 data App = App
 
 makeLenses [''App]
 
-httpd :: Int -> ByteString -> IO ()
-httpd port host = do
+httpd :: Store -> Int -> ByteString -> IO ()
+httpd store port host = do
 #ifdef DEV
   putStrLn "-----------------------------"
   putStrLn "THIS IS A DEVELOPMENT VERSION"
@@ -35,19 +37,19 @@ httpd port host = do
 #endif
   let config = setHostname host $ setPort port $
                setVerbose True defaultConfig
-  serveSnaplet config appInit
+  serveSnaplet config (appInit store)
 
-appInit :: SnapletInit App App
-appInit = makeSnaplet "curved-web-server" "Curved Web Server" Nothing $ do
-  addRoutes routes
+appInit :: Store -> SnapletInit App App
+appInit store = makeSnaplet "curved-web-server" "Curved Web Server" Nothing $ do
+  addRoutes $ routes store
   wrapHandlers (<|> serveFile "site/metric.html")
   return App
 
-routes :: [(ByteString, Handler App App ())]
-routes =
+routes :: Store -> [(ByteString, Handler App App ())]
+routes store =
   [ ("/", serveDirectory "site")
   , ("/csv/sin", sinCsv)
-  , serveWhisperAsCsv "/csv/" "/opt/graphite/storage/whisper/"
+  , serveWhisperAsCsv store "/csv/" "/opt/graphite/storage/whisper/"
   ]
 
 sinCsv :: Handler App App ()
@@ -58,14 +60,9 @@ sinCsv = do
       l (a, b) = show a ++ "," ++ show b ++ "\n"
   writeBS $ "date,close\n" `B.append` B.pack dat
 
-dataCsv :: FilePath -> Handler App App ()
-dataCsv filename = do
-  points <- liftIO $ do
-    wsp <- openWhisper filename
-    now <- (floor . toRational) <$> liftIO getPOSIXTime
-    Archive points <- readArchive wsp 0 now
-    closeWhisper wsp
-    return points
+dataCsv :: Store -> String -> Handler App App () -- TODO no need to pass explicitely Store around, can be get from the state monad.
+dataCsv store metric = do
+  points <- liftIO $ do readPoints store (T.pack metric)
 
   let dat = concat $ map l $ filter f points
       f (Point a _) = a /= 0
@@ -73,7 +70,7 @@ dataCsv filename = do
   writeBS $ "date,close\n" `B.append` B.pack dat
 
 --serveWhisperAsCsv :: FilePath -> Handler App App ()
-serveWhisperAsCsv prefix dir = (B.append prefix ":whatever",) $ do
+serveWhisperAsCsv store prefix dir = (B.append prefix ":whatever",) $ do
   metric <- (B.drop (B.length prefix) . B.takeWhile (/= '?') . rqURI) <$> getRequest
-  dataCsv $ dir ++ B.unpack metric ++ ".wsp"
+  dataCsv store (map (\c -> if c == '/' then '.' else c) $ B.unpack metric)
 

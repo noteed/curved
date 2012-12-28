@@ -12,6 +12,11 @@ import System.Console.CmdArgs.Implicit
 import Curved.Carbon
 import Curved.Httpd
 import Data.Whisper
+--import Data.Whisper.Store (newStore)
+import Curved.Cache (newStore)
+
+graphite_whisper_root :: FilePath
+graphite_whisper_root = "/opt/graphite/storage/whisper"
 
 main :: IO ()
 main = (runCmd =<<) . cmdArgs $
@@ -113,9 +118,10 @@ runCmd Info{..} = do
   mapM_ (\(Archive points) -> mapM_ print points) archives
 
 runCmd Httpd{..} = do
-  forkIO $ receivePoints 2006
-  forkIO $ receiveQueries 7002
-  httpd 8081 "localhost"
+  store <- newStore Nothing -- Just graphite_whisper_root
+  forkIO $ receivePoints store 2006
+  forkIO $ receiveQueries store 7002
+  httpd store 8081 "localhost"
 
 runCmd Push{..} = do
   now <- (floor . toRational) <$> getPOSIXTime

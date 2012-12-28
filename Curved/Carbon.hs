@@ -6,9 +6,11 @@ import Control.Applicative ((<$>))
 import Control.Monad (forever, when)
 import Control.Concurrent (forkIO)
 import qualified Data.ByteString as S
+import qualified Data.ByteString.Char8 as SC
 import qualified Data.Map as M
 import Data.Serialize.Get (getWord32be, runGet)
 import Data.Serialize.Put (putWord32be, runPut)
+import qualified Data.Text as T
 import Data.List
 import Data.Time.Clock.POSIX (getPOSIXTime)
 import Network (accept, listenOn, PortID(..), PortNumber, Socket)
@@ -20,36 +22,29 @@ import System.IO (hClose, hGetLine, hIsEOF, hSetBuffering, BufferMode(..), Handl
 
 import Data.Pickle
 import Data.Whisper
+import Curved.Cache (push, readPoints, Store)
 
-graphite_whisper_root :: FilePath
-graphite_whisper_root = "/opt/graphite/storage/whisper"
-
-receivePoints :: PortNumber -> IO ()
-receivePoints port = do
+receivePoints :: Store -> PortNumber -> IO ()
+receivePoints store port = do
   sock <- listenOn $ PortNumber port
   forever $ do
     (handle, _, _) <- accept sock
     -- hSetBuffering handle NoBuffering
-    forkIO $ processPoints handle
+    forkIO $ processPoints store handle
 
-processPoints :: Handle -> IO ()
-processPoints handle = do
+processPoints :: Store -> Handle -> IO ()
+processPoints store handle = do
   eof <- hIsEOF handle
   if eof
     then hClose handle
     else do
       line <- hGetLine handle
-      putStrLn $ "Received: " ++ line
       case words line of
         [metric, value_, timestamp_] ->
           case (validMetricName metric, reads value_, reads timestamp_) of
             (True, [(value :: Double, "")], [(timestamp :: Int, "")]) -> do
-              let path = foldl' (</>) graphite_whisper_root (split '.' metric) <.> "wsp"
-              exist <- doesFileExist path
-              when (not exist) $
-                createWhisper path [(60, 1440)] 0.5 Average
-              updateWhisperFile path timestamp value
-              processPoints handle
+              push store (T.pack metric) timestamp value
+              processPoints store handle
             _ -> hClose handle
         _ -> hClose handle
 
@@ -57,24 +52,18 @@ validMetricName :: String -> Bool
 validMetricName metric = all (`elem` (['a'..'z'] ++ ['0'..'9'] ++ ".-")) metric
   && length metric > 0
 
-split :: Eq a => a -> [a] -> [[a]]
-split c s =
-  case break (== c) s of
-    (before, []) -> [before]
-    (before, _ : after) -> before : split c after
-
-receiveQueries :: PortNumber -> IO ()
-receiveQueries port = do
+receiveQueries :: Store -> PortNumber -> IO ()
+receiveQueries store port = do
   sock <- listenOn $ PortNumber port
   forever $ do
     (sock', _) <- N.accept sock
     -- hSetBuffering handle NoBuffering
-    forkIO $ processQueries sock'
+    forkIO $ processQueries store sock'
 
 -- Loop on the same handle: the client can issue
 -- multiple requests on the same connection.
-processQueries :: Socket -> IO ()
-processQueries sock = do
+processQueries :: Store -> Socket -> IO ()
+processQueries store sock = do
   ms <- receive sock 4
   case ms of
     Nothing -> N.sClose sock -- TODO log corrupt queries
@@ -88,20 +77,20 @@ processQueries sock = do
           case mcontent of
             Nothing -> N.sClose sock -- TODO log corrupt queries
             Just content -> do
-              response <- processQuery content
+              response <- processQuery store content
               case response of
                 Left err -> N.sClose sock >> print err -- TODO log corrupt queries
-                Right r -> NS.send sock r >> processQueries sock
+                Right r -> NS.send sock r >> processQueries store sock
 
 data Query =
     CacheQuery S.ByteString -- ^ Query the cache for a specific metric name.
   deriving Show
 
-processQuery :: S.ByteString -> IO (Either String S.ByteString)
-processQuery s = case parseQuery s of
+processQuery :: Store -> S.ByteString -> IO (Either String S.ByteString)
+processQuery store s = case parseQuery s of
   Left err -> return $ Left err
   Right query -> do
-    response <- processQuery' query
+    response <- processQuery' store query
     let r = pickle response
     return . Right $
       runPut (putWord32be . fromIntegral $ S.length r) `S.append` r
@@ -114,14 +103,12 @@ parseQuery s = do
     "cache-query" -> CacheQuery <$> value `dictGetString` "metric"
     x -> Left $ "parseQuery: unknown query type." ++ show x
 
-processQuery' :: Query -> IO Value
-processQuery' (CacheQuery metric) = do
-  -- now <- (floor . toRational) <$> getPOSIXTime
-  -- let datapoints = zip (reverse $ take 1440 [now, now-60..]) (map sin [0,0.05..])
-  datapoints <- return [] -- TODO Get the points from an actual cache.
+processQuery' :: Store -> Query -> IO Value
+processQuery' store (CacheQuery metric) = do
+  datapoints <- readPoints store (T.pack $ SC.unpack metric)
   return . Dict $ M.fromList[(BinString "datapoints", List $ tuple datapoints)]
   where
-  tuple = map (\(a, b) -> Tuple [BinInt a, BinFloat b])
+  tuple = map (\(Point a b) -> Tuple [BinInt a, BinFloat b])
 
 receive :: Socket -> Int -> IO (Maybe S.ByteString)
 receive sock n = loop 0 []
