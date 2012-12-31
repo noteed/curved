@@ -13,6 +13,7 @@ import Data.Serialize.Put (putWord32be, runPut)
 import qualified Data.Text as T
 import Data.List
 import Data.Time.Clock.POSIX (getPOSIXTime)
+import Language.Python.Pickle (dictGetString, pickle, unpickle, Value(..))
 import Network (accept, listenOn, PortID(..), PortNumber, Socket)
 import qualified Network.Socket as N (accept, sClose)
 import qualified Network.Socket.ByteString as NS
@@ -20,7 +21,6 @@ import System.Directory (doesFileExist)
 import System.FilePath ((</>), (<.>))
 import System.IO (hClose, hGetLine, hIsEOF, hSetBuffering, BufferMode(..), Handle)
 
-import Data.Pickle
 import Data.Whisper
 import Curved.Cache (push, readPoints, Store)
 

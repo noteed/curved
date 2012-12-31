@@ -1,5 +1,5 @@
 name:                curved
-version:             0.0.0
+version:             0.0.1
 Cabal-Version:       >= 1.8
 synopsis:            Read and write Whisper (Graphite's file format) files.
 description:
@@ -21,6 +21,7 @@ library
                        filepath == 1.3.*,
                        mtl == 2.0.*,
                        network == 2.3.*,
+                       python-pickle == 0.1.*,
                        snap == 0.9.*,
                        snap-blaze == 0.2.*,
                        snap-core == 0.9.*,
@@ -35,7 +36,6 @@ library
                        Curved.Carbon,
                        Curved.Httpd,
                        Curved.RTS,
-                       Data.Pickle,
                        Data.Whisper,
                        Data.Whisper.Store
   build-tools:         c2hs >= 0.15
