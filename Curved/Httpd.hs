@@ -54,9 +54,8 @@ routes store =
 
 sinCsv :: Handler App App ()
 sinCsv = do
-  now_ <- liftIO getPOSIXTime
-  let now = floor $ toRational now_
-      dat = concat $ map l (zip [now-299..now] $ map (sin . (/ 10) . fromIntegral) [now..])
+  now <- floor . toRational <$> liftIO getPOSIXTime
+  let dat = concat $ map l (zip [now-299..now] $ map (sin . (/ 10) . fromIntegral) [now..])
       l (a, b) = show a ++ "," ++ show b ++ "\n"
   writeBS $ "date,close\n" `B.append` B.pack dat
 

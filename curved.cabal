@@ -34,6 +34,7 @@ library
   exposed-modules:     Curved.Cache,
                        Curved.Carbon,
                        Curved.Httpd,
+                       Curved.RTS,
                        Data.Pickle,
                        Data.Whisper,
                        Data.Whisper.Store
@@ -48,3 +49,4 @@ executable curved
                        curved,
                        time
   ghc-options:         -Wall
+                       -rtsopts

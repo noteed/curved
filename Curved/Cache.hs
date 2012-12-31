@@ -69,7 +69,7 @@ data Counter = Counter
 -- should be prefered.
 push :: Store -> T.Text -> Timestamp -> Double -> IO ()
 push cache metric t value = do
-  counter <- getCounter cache metric
+  counter <- getCounter cache metric -- TODO not necessarily a counter.
   adjustCounter t counter (const value)
 
 -- | Write a value for the given metric name. As it is a gauge, the value is
