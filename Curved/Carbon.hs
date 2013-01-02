@@ -3,7 +3,7 @@
 module Curved.Carbon where
 
 import Control.Applicative ((<$>))
-import Control.Monad (forever, when)
+import Control.Monad (forever)
 import Control.Concurrent (forkIO)
 import qualified Data.ByteString as S
 import qualified Data.ByteString.Char8 as SC
@@ -11,14 +11,10 @@ import qualified Data.Map as M
 import Data.Serialize.Get (getWord32be, runGet)
 import Data.Serialize.Put (putWord32be, runPut)
 import qualified Data.Text as T
-import Data.List
-import Data.Time.Clock.POSIX (getPOSIXTime)
 import Language.Python.Pickle (dictGetString, pickle, unpickle, Value(..))
 import Network (accept, listenOn, PortID(..), PortNumber, Socket)
 import qualified Network.Socket as N (accept, sClose)
 import qualified Network.Socket.ByteString as NS
-import System.Directory (doesFileExist)
-import System.FilePath ((</>), (<.>))
 import System.IO (hClose, hGetLine, hIsEOF, hSetBuffering, BufferMode(..), Handle)
 
 import Data.Whisper

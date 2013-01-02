@@ -7,7 +7,6 @@
 module Curved.Cache where
 
 import Control.Applicative ((<$>))
-import qualified Data.ByteString as S
 import qualified Data.HashMap.Strict as M
 import Data.IORef (atomicModifyIORef, newIORef, readIORef, IORef)
 import qualified Data.Text as T
@@ -90,11 +89,13 @@ readCounter cache metric = do
   (t, xs, l) <- readIORef cRef
   return . reverse $ zipWith Point [t, t - cInterval..] xs
 
+readPoints :: Store -> T.Text -> IO [Point]
 readPoints = readCounter
 
 
 -- TODO Case when the cache is "pass-through", i.e. it must contain no value
 -- (they are written to disc directly), and adjustCounterAndInc wouldn't work.
+inct :: Timestamp -> Store -> T.Text -> IO ()
 inct t cache metric = do
   counter <- getCounter cache metric
   adjustCounter t counter (+ 1)

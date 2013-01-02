@@ -23,17 +23,21 @@ using cabal:
   binary format).
 - Proof-of-concpet web server with D3.js rendering.
 
+## Limitation
+
+- Graphite (actually `carbon-cache`) implements some protections (e.g. don't
+  create too many files too quickly). Curved doesn't do that yet.
+
 ## TODO
 
-- Instrument Curved (with EKG).
-- The cache-query request is always responding with the empty list.
+- Complete the use of GHC.Stats
 - Other 7002 queries are not implemented.
 - Modularity:
   - Any program should be able to store metrics in cache or to disk using the
     Whisper format, and/or serve them as carbon-cache does, or directly as a
     web server, or push them to Graphite/Curved.
-- Turn the Pickle format code into its own package.
-- Listen in UPD in addition to TCP.
+- Listen in UDP in addition to TCP.
 - Turn the Web server into its own package.
 - Turn the Whisper format code into its own package.
+- Run hlint.
 

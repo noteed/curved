@@ -5,7 +5,6 @@ module Curved.RTS where
 
 import Control.Applicative ((<$>))
 import Control.Concurrent
-import Control.Monad (forever)
 import Control.Monad.IO.Class (liftIO)
 import Data.Time.Clock.POSIX (getPOSIXTime)
 import GHC.Stats

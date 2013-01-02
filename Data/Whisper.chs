@@ -114,11 +114,13 @@ openMMapFile path = do
       else return (ptr, fd)
 
 -- | Close a memory-mapped file.
+closeMMapFile ::  Ptr () -> Fd -> IO ()
 closeMMapFile ptr fd = do
   _ <- {# call munmap #} ptr (fromIntegral fd) -- TODO check error code
   return ()
 
 -- | Create a memory-mapped file of the given size.
+createMMapFile :: FilePath -> Int -> IO (Ptr (), Fd)
 createMMapFile path size = do
   fd <- openFd path ReadWrite (Just $ ownerReadMode `unionFileModes` ownerWriteMode) defaultFileFlags
   -- Write a dummy byte to size correctly the underlying file befor
@@ -240,12 +242,13 @@ writeArchives :: Whisper -> [ArchiveInfo] -> [Archive] -> IO ()
 writeArchives w infos archives =
   mapM_ (uncurry $ writeArchive w) $ zip infos archives
 
-createWhisper :: FilePath -> [(Int, Int)] -> Float -> AggregationType -> IO ()
-createWhisper filename archiveInfos_ factor aggregation = do
+createWhisper :: FilePath -> Float -> AggregationType -> [(Int, Int)] -> IO ()
+createWhisper filename factor aggregation archiveInfos_ = do
   -- TODO archiveInfos_ can't be null.
 
   let archiveInfos = sortBy (compare `on` fst) archiveInfos_
-      archiveInfos' = tail $ scanl toAI (ArchiveInfo (headerSize $ length archiveInfos) 1 0) archiveInfos
+      archiveInfos' = tail $ scanl toAI
+        (ArchiveInfo (headerSize $ length archiveInfos) 1 0) archiveInfos
       retention = aiRetention $ last archiveInfos'
       meta = MetaData aggregation retention factor (length archiveInfos)
       header = Header meta archiveInfos'
@@ -254,23 +257,28 @@ createWhisper filename archiveInfos_ factor aggregation = do
   closeWhisper w
 
 -- | Given an ArchiveInfo and a timestamp, return the next slot in the archive.
+nextSlot :: ArchiveInfo -> Int -> Int -> Int
 nextSlot ArchiveInfo{..} base timestamp =
   (((timestamp - base) `div` aiSecondsPerPoint) + 1) `mod` aiPoints
 
 -- | Given an ArchiveInfo and a timestamp, return its slot in the archive.
+slot :: ArchiveInfo -> Int -> Int -> Int
 slot ArchiveInfo{..} base timestamp =
   ((timestamp - base) `div` aiSecondsPerPoint) `mod` aiPoints
 
 -- | Compute the timestamp at the very start of the window given the ending
 -- timestamp.
+startTimestamp :: ArchiveInfo -> Int -> Int
 startTimestamp ai timestamp = slotTimestamp ai timestamp
   - aiRetention ai + aiSecondsPerPoint ai
 
 -- | Return the timestamp "identifying" the slot containg the given timestamp.
+slotTimestamp :: ArchiveInfo -> Int -> Int
 slotTimestamp ai timestamp = timestamp - (timestamp `mod` aiSecondsPerPoint ai)
 
 -- | Zero out any point whose timestamp is not in the time window ending at
 -- the given timestamp.
+keepWindow :: ArchiveInfo -> Int -> [Point] -> [Point]
 keepWindow ai@ArchiveInfo{..} timestamp points =
   zipWith f [s, s + aiSecondsPerPoint ..] points
   where

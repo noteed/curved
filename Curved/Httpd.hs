@@ -9,13 +9,10 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 module Curved.Httpd where
 
-import Control.Applicative ((<$>))
 import Data.Time.Clock.POSIX (getPOSIXTime)
 import qualified Data.Text as T
 
 import Snap
-import Snap.Snaplet (wrapHandlers)
-import qualified Snap.Blaze as Blaze (blaze)
 import Snap.Util.FileServe (serveDirectory, serveFile)
 
 import Data.ByteString.Char8 (ByteString)
@@ -42,21 +39,22 @@ httpd store port host = do
 appInit :: Store -> SnapletInit App App
 appInit store = makeSnaplet "curved-web-server" "Curved Web Server" Nothing $ do
   addRoutes $ routes store
-  wrapHandlers (<|> serveFile "site/metric.html")
+  wrapSite (<|> serveFile "site/metric.html")
   return App
 
 routes :: Store -> [(ByteString, Handler App App ())]
 routes store =
   [ ("/", serveDirectory "site")
   , ("/csv/sin", sinCsv)
-  , serveWhisperAsCsv store "/csv/" "/opt/graphite/storage/whisper/"
+  , serveWhisperAsCsv store "/csv/"
   ]
 
 sinCsv :: Handler App App ()
 sinCsv = do
   now <- floor . toRational <$> liftIO getPOSIXTime
-  let dat = concat $ map l (zip [now-299..now] $ map (sin . (/ 10) . fromIntegral) [now..])
-      l (a, b) = show a ++ "," ++ show b ++ "\n"
+  let dat = concat . map l . zip [now-299..(now::Int)] $
+        map (sin . (/ 10) . fromIntegral) [now..]
+      l (a, b) = show a ++ "," ++ show (b::Double) ++ "\n"
   writeBS $ "date,close\n" `B.append` B.pack dat
 
 dataCsv :: Store -> String -> Handler App App () -- TODO no need to pass explicitely Store around, can be get from the state monad.
@@ -68,8 +66,8 @@ dataCsv store metric = do
       l (Point a b) = show a ++ "," ++ show b ++ "\n"
   writeBS $ "date,close\n" `B.append` B.pack dat
 
---serveWhisperAsCsv :: FilePath -> Handler App App ()
-serveWhisperAsCsv store prefix dir = (B.append prefix ":whatever",) $ do
+serveWhisperAsCsv :: Store -> ByteString -> (ByteString, Handler App App ())
+serveWhisperAsCsv store prefix = (B.append prefix ":whatever",) $ do
   metric <- (B.drop (B.length prefix) . B.takeWhile (/= '?') . rqURI) <$> getRequest
   dataCsv store (map (\c -> if c == '/' then '.' else c) $ B.unpack metric)
 

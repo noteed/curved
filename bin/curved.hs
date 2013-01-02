@@ -130,4 +130,4 @@ runCmd Push{..} = do
   updateWhisperFile cmdFilename now cmdValue
 
 runCmd Create{..} =
-  createWhisper cmdFilename [(cmdPrecision, cmdSize)] 0.5 Average
+  createWhisper cmdFilename 0.5 Average [(cmdPrecision, cmdSize)]
