@@ -1,5 +1,7 @@
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE RecordWildCards #-}
+-- | Data.Whisper implements the Whisper file format used by Graphite to store
+-- time series data.
 module Data.Whisper
   ( closeWhisper, openWhisper, createWhisper, updateWhisperFile
   , readHeader, readMetaData, readArchiveInfo
@@ -60,17 +62,23 @@ enum curved_PROT_WRAPPER
 {# enum curved_PROT_WRAPPER as PROT_WRAPPER {} with prefix = "curved_" #}
 
 
--- | The header is included in the Whisper data type, so it is read direclty
--- when the Whisper file is open. (Most operation needs the header data, by
--- doing so we can read it only once.)
+-- | The Whisper data type. It is really just like a handle to the underlying
+-- file. The header is included in the Whisper data type, so it is read
+-- directly when the Whisper file is open. (As most operations need the header
+-- data, by doing so it can be read only once.)
 data Whisper = Whisper { whisperPtr :: Ptr (), whisperFd :: Fd, whisperHeader :: Header }
 
+-- | The header contains meta data (for the whole file) and descriptors
+-- (ArchiveInfo) for all file's archives.
 data Header = Header
   { hMetaData :: MetaData
   , hArchiveInfo :: [ArchiveInfo]
   }
   deriving Show
 
+-- | The meta data specifies how data points must be aggregated from a
+-- higher-resolution archive to a lower-resolution archive, the time range
+-- covered by the file, the (TODO), and the number of archives.
 data MetaData = MetaData
   { mdAggregationType :: AggregationType
   , mdMaxRetention :: Int
@@ -79,6 +87,9 @@ data MetaData = MetaData
   }
   deriving Show
 
+-- | The ArchiveInfo data type describes an archive: its offset in bytes from
+-- the beginning of the file, how many seconds a give data point covers, and
+-- the number of data points it holds.
 data ArchiveInfo = ArchiveInfo
   { aiOffset :: Int
   , aiSecondsPerPoint :: Int
@@ -95,9 +106,13 @@ aiSize ArchiveInfo{..} = aiPoints * sizeOf (undefined :: Point)
 data AggregationType = Average | Sum | Last | Max | Min
   deriving Show
 
+-- | The Archive data type is merely just a list of data points. It is
+-- described by ArchiveInfo, located in the Whisper header.
 data Archive = Archive [Point]
   deriving Show
 
+-- | A single data point in an archive. A point contains both a Double value
+-- and a timestamp (in seconds from epoch).
 data Point = Point Int Double
   deriving Show
 

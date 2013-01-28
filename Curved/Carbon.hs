@@ -1,5 +1,9 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+-- | This module implements the Curved servers to receive/serve metrics.
+-- Note these are simple TCP (and later, UDP) servers, not an HTTP server
+-- to provide beautiful rendering of the metrics.
+-- TODO Probably call this module Protocol instead of Carbon.
 module Curved.Carbon where
 
 import Control.Applicative ((<$>))
@@ -20,6 +24,8 @@ import System.IO (hClose, hGetLine, hIsEOF, hSetBuffering, BufferMode(..), Handl
 import Data.Whisper
 import Curved.Cache (push, readPoints, Store)
 
+-- | Receive metrics on the given port. Messages have the form:
+--   metric-name value timestamp
 receivePoints :: Store -> PortNumber -> IO ()
 receivePoints store port = do
   sock <- listenOn $ PortNumber port
@@ -28,6 +34,8 @@ receivePoints store port = do
     -- hSetBuffering handle NoBuffering
     forkIO $ processPoints store handle
 
+-- | Handle a single message of the form:
+--   metric-name value timestamp
 processPoints :: Store -> Handle -> IO ()
 processPoints store handle = do
   eof <- hIsEOF handle
@@ -44,6 +52,9 @@ processPoints store handle = do
             _ -> hClose handle
         _ -> hClose handle
 
+-- | Predicate to test if a metric name is valid (metric names are used as
+-- filenames, the most important thing is the metric name can not contain a
+-- slash).
 validMetricName :: String -> Bool
 validMetricName metric = all (`elem` (['a'..'z'] ++ ['0'..'9'] ++ ".-")) metric
   && length metric > 0
@@ -56,10 +67,11 @@ receiveQueries store port = do
     -- hSetBuffering handle NoBuffering
     forkIO $ processQueries store sock'
 
--- Loop on the same handle: the client can issue
--- multiple requests on the same connection.
+-- | Receive requests for metric data
 processQueries :: Store -> Socket -> IO ()
 processQueries store sock = do
+  -- Loop on the same handle: the client can issue
+  -- multiple requests on the same connection.
   ms <- receive sock 4
   case ms of
     Nothing -> N.sClose sock -- TODO log corrupt queries

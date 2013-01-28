@@ -2,7 +2,7 @@
 
 This project is in early stage.
 
-Curved is a network monitoring package. Its aim it to collect and serve
+Curved is a network monitoring package. Its aim is to collect and serve
 metrics. It is in particular a drop-in replacement for
 [Graphite](http://graphite.readthedocs.org/).
 

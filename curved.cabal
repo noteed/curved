@@ -1,9 +1,12 @@
 name:                curved
 version:             0.0.1
 Cabal-Version:       >= 1.8
-synopsis:            Read and write Whisper (Graphite's file format) files.
+synopsis:            Network metrics service
 description:
-  Read and write Whisper (Graphite's file format) files.
+  Curved is a network monitoring package. Its aim is to collect and serve
+  metrics. It is in particular a drop-in replacement for Graphite (minus the web
+  interface). It can also be used to read and write Whisper (Graphite's file
+  format) files.
 category:            Development
 license:             BSD3
 license-file:        LICENSE
