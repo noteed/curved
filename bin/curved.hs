@@ -13,8 +13,8 @@ import Curved.Carbon
 import Curved.Httpd
 import Curved.RTS
 import Data.Whisper
---import Data.Whisper.Store (newStore)
-import Curved.Cache (newStore)
+import Data.Whisper.Store (newStore)
+--import Curved.Cache (newStore)
 
 graphite_whisper_root :: FilePath
 graphite_whisper_root = "/opt/graphite/storage/whisper"
@@ -119,7 +119,7 @@ runCmd Info{..} = do
   mapM_ (\(Archive points) -> mapM_ print points) archives
 
 runCmd Httpd{..} = do
-  store <- newStore Nothing -- TODO Just graphite_whisper_root
+  store <- newStore graphite_whisper_root
   _ <- forkIO $ receivePoints store 2006
   _ <- forkIO $ receiveQueries store 7002
   _ <- forkIO $ pushGHCStatsToStore store

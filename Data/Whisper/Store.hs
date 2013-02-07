@@ -5,6 +5,7 @@ module Data.Whisper.Store
   ( newStore
   , push
   , readPoints
+  , Store
   )where
 
 import Control.Applicative ((<$>))
@@ -17,7 +18,7 @@ import System.FilePath (splitFileName, (<.>), (</>))
 
 import Data.Whisper
 
--- | The `Store` acts as a handle. One a `Store` has been configured and
+-- | The `Store` acts as a handle. Once a `Store` has been configured and
 -- created with `newStore`, it is possible to use it to `push` new metrics
 -- data and retrieve them, e.g. with `readPoints`.
 data Store = Store

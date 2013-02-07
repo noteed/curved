@@ -14,7 +14,7 @@ import qualified Data.ByteString.Char8 as SC
 import qualified Data.Map as M
 import Data.Serialize.Get (getWord32be, runGet)
 import Data.Serialize.Put (putWord32be, runPut)
-import qualified Data.Text as T
+--import qualified Data.Text as T
 import Language.Python.Pickle (dictGetString, pickle, unpickle, Value(..))
 import Network (accept, listenOn, PortID(..), PortNumber, Socket)
 import qualified Network.Socket as N (accept, sClose)
@@ -22,7 +22,8 @@ import qualified Network.Socket.ByteString as NS
 import System.IO (hClose, hGetLine, hIsEOF, hSetBuffering, BufferMode(..), Handle)
 
 import Data.Whisper
-import Curved.Cache (push, readPoints, Store)
+import Data.Whisper.Store
+--import Curved.Cache (push, readPoints, Store)
 
 -- | Receive metrics on the given port. Messages have the form:
 --   metric-name value timestamp
@@ -47,7 +48,7 @@ processPoints store handle = do
         [metric, value_, timestamp_] ->
           case (validMetricName metric, reads value_, reads timestamp_) of
             (True, [(value :: Double, "")], [(timestamp :: Int, "")]) -> do
-              push store (T.pack metric) timestamp value
+              push store metric timestamp value
               processPoints store handle
             _ -> hClose handle
         _ -> hClose handle
@@ -113,7 +114,8 @@ parseQuery s = do
 
 processQuery' :: Store -> Query -> IO Value
 processQuery' store (CacheQuery metric) = do
-  datapoints <- readPoints store (T.pack $ SC.unpack metric)
+  --datapoints <- readPoints store (SC.unpack metric)
+  let datapoints = [] -- read from non-existing cache.
   return . Dict $ M.fromList[(BinString "datapoints", List $ tuple datapoints)]
   where
   tuple = map (\(Point a b) -> Tuple [BinInt a, BinFloat b])

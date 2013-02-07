@@ -56,7 +56,7 @@ data Counter = Counter
   -- ^ Last time the counter was updated (with cUpdated `mod` cInterval == 0),
   -- mutable list of values. Values are cons'd as they arrive. A
   -- normalization function will cons zeroes when the counter is not
-  -- explcitely updated, and size of the list.
+  -- explicitely updated, and size of the list.
   , cLimit :: Int
   -- ^ Maximum number of values kept in the cache.
   , cInterval :: Int

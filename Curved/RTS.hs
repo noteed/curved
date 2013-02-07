@@ -9,7 +9,8 @@ import Control.Monad.IO.Class (liftIO)
 import Data.Time.Clock.POSIX (getPOSIXTime)
 import GHC.Stats
 
-import Curved.Cache
+import Data.Whisper.Store
+--import Curved.Cache
 
 pushGHCStatsToStore :: Store -> IO ()
 pushGHCStatsToStore store = loop 0 0

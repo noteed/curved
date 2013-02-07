@@ -19,7 +19,8 @@ import Data.ByteString.Char8 (ByteString)
 import qualified Data.ByteString.Char8 as B
 
 import Data.Whisper
-import Curved.Cache
+import Data.Whisper.Store
+-- import Curved.Cache # TODO Use a cache, after benchmarks are done.
 
 data App = App
 
@@ -59,7 +60,7 @@ sinCsv = do
 
 dataCsv :: Store -> String -> Handler App App () -- TODO no need to pass explicitely Store around, can be get from the state monad.
 dataCsv store metric = do
-  points <- liftIO $ do readPoints store (T.pack metric)
+  points <- liftIO $ do readPoints store metric
 
   let dat = concat $ map l $ filter f points
       f (Point a _) = a /= 0
